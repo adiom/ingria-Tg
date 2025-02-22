@@ -2,64 +2,45 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const fetch = require('node-fetch');
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const ANALYZER_URL = process.env.ANALYZER_URL || "http://your-ingria-backend-url/analyze";
+const bot = new Telegraf(process.env.BOT_TOKEN);
+const ANALYZER_URL = "http://your-ingria-backend-url/analyze"; // Замени на реальный URL
 
-if (!BOT_TOKEN) {
-    console.error("Ошибка: BOT_TOKEN не задан!");
-    process.exit(1);
-}
-
-const bot = new Telegraf(BOT_TOKEN);
-
+// Логируем запуск бота
 console.log("🚀 Бот запускается...");
-bot.telegram.sendMessage(process.env.ADMIN_ID, "🤖 Бот запущен и готов к работе!").catch(console.error);
 
-bot.start((ctx) => {
-    ctx.reply("Привет! Отправь мне голосовое сообщение, и я отправлю его на анализ.");
-});
-
-// Логирование сообщений
+// Обрабатываем любые сообщения
 bot.on('message', async (ctx) => {
-    console.log("📩 Новое сообщение от", ctx.message.from.username || ctx.message.from.id);
-});
+  console.log("📩 Получено сообщение:", ctx.message);
 
-// Обработка голосовых сообщений
-bot.on('voice', async (ctx) => {
+  if (ctx.message.voice) {
+    const voiceFileId = ctx.message.voice.file_id;
+    const file = await ctx.telegram.getFile(voiceFileId);
+    const fileUrl = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
+
+    console.log("🎤 Отправляем голосовое сообщение на анализ:", fileUrl);
+
     try {
-        console.log("🎤 Получено голосовое сообщение");
+      const response = await fetch(ANALYZER_URL, {
+        method: 'POST',
+        body: JSON.stringify({ fileUrl }),
+        headers: { 'Content-Type': 'application/json' },
+      });
 
-        const voiceFileId = ctx.message.voice.file_id;
-        const file = await ctx.telegram.getFile(voiceFileId);
-        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
+      const data = await response.json();
+      console.log("📊 Ответ от бэкенда:", data);
 
-        console.log("📤 Отправляем файл на анализ:", fileUrl);
-
-        const response = await fetch(ANALYZER_URL, {
-            method: 'POST',
-            body: JSON.stringify({ fileUrl }),
-            headers: { 'Content-Type': 'application/json' },
-        });
-
-        if (!response.ok) throw new Error(`Ошибка запроса: ${response.statusText}`);
-
-        const data = await response.json();
-        console.log("📥 Ответ от бэкенда:", data);
-
-        if (data && data.result) {
-            ctx.reply(`🔍 Результат анализа: ${data.result}`);
-        } else {
-            ctx.reply('⚠️ Не удалось обработать голосовое сообщение.');
-        }
-    } catch (err) {
-        console.error("❌ Ошибка при обработке голосового сообщения:", err);
-        ctx.reply("Произошла ошибка при анализе. Попробуй позже.");
+      ctx.reply(data.result ? `📢 Ответ от Ingria: ${data.result}` : "⚠️ Не удалось обработать голос.");
+    } catch (error) {
+      console.error("❌ Ошибка при отправке на анализ:", error);
+      ctx.reply("🚨 Произошла ошибка при обработке голосового сообщения.");
     }
+  } else {
+    ctx.reply("Привет! Отправь мне голосовое сообщение.");
+  }
 });
 
-// Глобальная обработка ошибок
-bot.catch((err, ctx) => {
-    console.error(`❌ Ошибка обработки апдейта (${ctx.updateType}):`, err);
-});
+// Убираем возможный Webhook, чтобы избежать конфликта
+bot.telegram.deleteWebhook();
 
-bot.launch({ polling: true }).then(() => console.log("✅ Бот успешно запущен!"));
+// Запускаем бота
+bot.launch().then(() => console.log("✅ Бот успешно запущен и ждёт сообщений!"));
