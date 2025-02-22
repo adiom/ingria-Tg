@@ -1,65 +1,132 @@
-const { Telegraf } = require('telegraf');
-const fetch = require('node-fetch');
-const FormData = require('form-data');
-const fs = require('fs');
-const path = require('path');
+// INGRIA TELEGRAM NODEJS
+
 require('dotenv').config();
+const TelegramBot = require('node-telegram-bot-api');
+const axios = require('axios');
+const FormData = require('form-data');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
-const ANALYZER_URL = "https://ingria-backend.vercel.app/analyze"; // Заменить на реальный URL
+// Получение токена Telegram бота и URL бэкенда из переменных окружения
+const TELEGRAM_BOT_TOKEN = process.env.TOKEN;
+const BACKEND_API_URL = process.env.BACKEND_API_URL || 'https://ingria-backend.vercel.app/analyze';
 
-// Функция для загрузки голосового сообщения в бэкенд
-async function analyzeVoice(filePath, ctx) {
-  console.log("📤 Отправляем файл в бэкенд:", filePath);
-
-  try {
-    const form = new FormData();
-    form.append('file', fs.createReadStream(filePath));
-
-    const response = await fetch(ANALYZER_URL, {
-      method: 'POST',
-      body: form,
-      headers: form.getHeaders(),
-    });
-
-    const data = await response.json();
-    console.log("📊 Ответ от бэкенда:", data);
-
-    if (data.result) {
-      ctx.reply(`Ответ от Ingria Media Analyzer: ${data.result}`);
-    } else {
-      ctx.reply('Не удалось обработать голосовое сообщение.');
-    }
-  } catch (error) {
-    console.error("❌ Ошибка отправки в бэкенд:", error);
-    ctx.reply('Ошибка при обработке голосового сообщения.');
-  }
+if (!TELEGRAM_BOT_TOKEN) {
+    console.error('Ошибка: Не найден токен Telegram бота. Убедитесь, что переменная окружения TELEGRAM_BOT_TOKEN установлена.');
+    process.exit(1);
 }
 
-// Обработчик голосовых сообщений
-bot.on('voice', async (ctx) => {
-  const voiceFileId = ctx.message.voice.file_id;
-  const file = await ctx.telegram.getFile(voiceFileId);
-  const fileUrl = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
-  
-  console.log("🎤 Загружаем голосовое сообщение:", fileUrl);
+// Создаем экземпляр бота
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 
-  // Скачиваем файл во временную папку
-  const tempFilePath = path.join(__dirname, 'temp.oga');
-  const res = await fetch(fileUrl);
-  const fileStream = fs.createWriteStream(tempFilePath);
-
-  await new Promise((resolve, reject) => {
-    res.body.pipe(fileStream);
-    res.body.on("error", reject);
-    fileStream.on("finish", resolve);
-  });
-
-  // Отправляем файл в бэкенд
-  await analyzeVoice(tempFilePath, ctx);
-
-  // Удаляем файл после обработки
-  fs.unlinkSync(tempFilePath);
+// Обработка команды /start
+bot.onText(/\/start/, (msg) => {
+    bot.sendMessage(msg.chat.id, 'Привет! Отправь мне фотографию или голосовое сообщение, и я их проанализирую.');
 });
 
-bot.launch().then(() => console.log("🚀 Бот успешно запущен и ждёт сообщений!"));
+// Обработка команды /help
+bot.onText(/\/help/, (msg) => {
+    bot.sendMessage(msg.chat.id, 'Просто отправь мне фотографию или голосовое сообщение, и я скажу, что на них вижу/слышу.');
+});
+
+// Функция для обрезки длинного текста
+function truncateText(text, maxLength) {
+    if (text.length > maxLength) {
+        return text.substring(0, maxLength - 3) + '...';
+    }
+    return text;
+}
+
+// Обработка полученных сообщений
+bot.on('message', async (msg) => {
+    console.log('Получено сообщение:', msg); // Добавлено логирование
+
+
+    const chatId = msg.chat.id;
+    const MAX_CAPTION_LENGTH = 1000; // Пример ограничения длины подписи
+
+    if (msg.photo) {
+        try {
+            const statusMessage = await bot.sendMessage(chatId, 'Отправляю изображение на обработку... ⏳');
+
+            const fileId = msg.photo[msg.photo.length - 1].file_id;
+            const fileInfo = await bot.getFile(fileId);
+            const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+
+            const imageResponse = await axios({
+                method: 'get',
+                url: fileUrl,
+                responseType: 'arraybuffer',
+            });
+
+            const formData = new FormData();
+            const imageName = `telegram_image_${msg.message_id}.jpg`;
+            formData.append('file', Buffer.from(imageResponse.data), {
+                filename: imageName,
+                contentType: 'image/jpeg',
+            });
+
+            const backendResponse = await axios.post(BACKEND_API_URL, formData, {
+                headers: formData.getHeaders(),
+            });
+
+            const truncatedDescription = truncateText(backendResponse.data.description, MAX_CAPTION_LENGTH - ("\n\n@Ingria_AI_bot Ingria AI".length));
+
+            const tempFilePath = path.join(__dirname, imageName);
+            await fs.writeFile(tempFilePath, Buffer.from(imageResponse.data));
+
+            await bot.sendPhoto(chatId, tempFilePath, {
+                caption: `${truncatedDescription} \n\n@Ingria_AI_bot Ingria AI`,
+            });
+
+            await fs.unlink(tempFilePath);
+
+        } catch (error) {
+            console.error('Ошибка при обработке изображения:', error);
+            bot.sendMessage(chatId, 'Произошла ошибка при обработке изображения. Попробуйте позже.');
+        }
+    } else if (msg.voice) {
+        try {
+            const fileId = msg.voice.file_id;
+            const fileInfo = await bot.getFile(fileId);
+            const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+
+            const audioResponse = await axios({
+                method: 'get',
+                url: fileUrl,
+                responseType: 'arraybuffer',
+            });
+
+            const formData = new FormData();
+            const audioName = `telegram_audio_${msg.message_id}.ogg`;
+            formData.append('file', Buffer.from(audioResponse.data), {
+                filename: audioName,
+                contentType: 'audio/ogg',
+            });
+
+            const backendResponse = await axios.post(BACKEND_API_URL, formData, {
+                headers: formData.getHeaders(),
+            });
+
+            const truncatedDescription = truncateText(backendResponse.data.description, MAX_CAPTION_LENGTH - ("\n\n🎈 @Ingria_AI_bot Ingria AI".length));
+
+            const tempFilePath = path.join(__dirname, audioName);
+            await fs.writeFile(tempFilePath, Buffer.from(audioResponse.data));
+
+            await bot.sendVoice(chatId, tempFilePath, {
+                caption: `${truncatedDescription} \n\n🎈 @Ingria_AI_bot Ingria AI`,
+            });
+
+            await fs.unlink(tempFilePath);
+
+        } catch (error) {
+            console.error('Ошибка при обработке аудио:', error);
+            bot.sendMessage(chatId, 'Произошла ошибка при обработке аудио. Попробуйте позже.');
+        }
+    }  else if (msg.text) {
+        console.log(`Получено текстовое сообщение от ${msg.from.username || msg.from.first_name}: ${msg.text}`);
+        // Здесь можно добавить обработку других текстовых сообщений, если нужно
+    }
+});
+
+console.log('Бот запущен и ожидает сообщения...');
