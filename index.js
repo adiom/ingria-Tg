@@ -3,7 +3,7 @@ const { Telegraf } = require('telegraf');
 const fetch = require('node-fetch');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-const ANALYZER_URL = "http://your-ingria-backend-url/analyze"; // Замени на реальный URL
+const ANALYZER_URL = "https://ingria-backend.vercel.app/analyze"; // Замени на реальный URL
 
 // Логируем запуск бота
 console.log("🚀 Бот запускается...");
