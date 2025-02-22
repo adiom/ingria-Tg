@@ -62,4 +62,4 @@ bot.catch((err, ctx) => {
     console.error(`❌ Ошибка обработки апдейта (${ctx.updateType}):`, err);
 });
 
-bot.launch().then(() => console.log("✅ Бот успешно запущен!"));
+bot.launch({ polling: true }).then(() => console.log("✅ Бот успешно запущен!"));
