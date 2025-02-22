@@ -6,10 +6,12 @@ const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const express = require('express'); // Подключаем express
 
 // Получение токена Telegram бота и URL бэкенда из переменных окружения
 const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN;
 const BACKEND_API_URL = process.env.BACKEND_API_URL || 'https://ingria-backend.vercel.app/analyze';
+const PORT = process.env.PORT || 3000; // Порт для веб-сервера
 
 if (!TELEGRAM_BOT_TOKEN) {
     console.error('Ошибка: Не найден токен Telegram бота. Убедитесь, что переменная окружения TELEGRAM_BOT_TOKEN установлена.');
@@ -18,6 +20,34 @@ if (!TELEGRAM_BOT_TOKEN) {
 
 // Создаем экземпляр бота
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+
+// **Настройка Express веб-сервера**
+const app = express();
+const botLogs = []; // Массив для хранения логов бота
+
+// Переопределяем console.log для перехвата логов
+const originalConsoleLog = console.log;
+console.log = function (...args) {
+    botLogs.push(`${new Date().toLocaleString()} - ${args.join(' ')}`); // Добавляем логи в массив с timestamp
+    originalConsoleLog.apply(console, args); // Вызываем оригинальный console.log, чтобы логи также выводились в консоль
+};
+
+// Эндпоинт для просмотра логов бота
+app.get('/hvyuyiolknbhbjhkl', (req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`
+        <h1>Bot Logs</h1>
+        <pre style="background-color: #f0f0f0; padding: 10px; border: 1px solid #ccc; border-radius: 5px; overflow-x: auto;">
+            ${botLogs.map(log => `${log}<br>`).join('')}
+        </pre>
+    `);
+});
+
+// Запускаем Express сервер
+app.listen(PORT, () => {
+    console.log(`Веб-сервер для логов бота запущен на порту ${PORT}`);
+});
+
 
 // Обработка команды /start
 bot.onText(/\/start/, (msg) => {
@@ -39,8 +69,7 @@ function truncateText(text, maxLength) {
 
 // Обработка полученных сообщений
 bot.on('message', async (msg) => {
-    console.log('Получено сообщение:', msg); // Добавлено логирование
-
+    console.log('Получено сообщение:', msg); // Логирование сообщения
 
     const chatId = msg.chat.id;
     const MAX_CAPTION_LENGTH = 1000; // Пример ограничения длины подписи
