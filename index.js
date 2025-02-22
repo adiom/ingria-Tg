@@ -8,7 +8,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 // Получение токена Telegram бота и URL бэкенда из переменных окружения
-const TELEGRAM_BOT_TOKEN = process.env.TOKEN;
+const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN;
 const BACKEND_API_URL = process.env.BACKEND_API_URL || 'https://ingria-backend.vercel.app/analyze';
 
 if (!TELEGRAM_BOT_TOKEN) {
