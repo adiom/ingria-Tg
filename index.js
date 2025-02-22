@@ -5,7 +5,7 @@ const fetch = require('node-fetch');
 
 // Чтение переменных из .env
 const bot = new Telegraf(process.env.BOT_TOKEN);
-const ANALYZER_URL = process.env.ANALYZER_URL;
+const ANALYZER_URL = "http://your-ingria-backend-url/analyze";
 
 bot.on('voice', async (ctx) => {
   // Получаем голосовое сообщение
