@@ -4,10 +4,8 @@ const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const FormData = require('form-data');
-
 const app = express();
 const PORT = 3000;
-
 const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN;
 const BACKEND_API_URL = process.env.BACKEND_API_URL || 'https://ingria-backend.vercel.app/analyze';
 
@@ -17,6 +15,7 @@ if (!TELEGRAM_BOT_TOKEN) {
 }
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+
 let logs = [];
 
 function logMessage(message) {
@@ -38,19 +37,21 @@ bot.onText(/\/help/, (msg) => {
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     logMessage(`Сообщение от @${msg.from.username || msg.from.first_name}: ${msg.text || '[Файл]'} `);
-    
+
     if (msg.photo) {
         try {
             const fileId = msg.photo[msg.photo.length - 1].file_id;
             const fileInfo = await bot.getFile(fileId);
             const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
-            
+
             const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
             const formData = new FormData();
             formData.append('file', Buffer.from(imageResponse.data), { filename: 'image.jpg', contentType: 'image/jpeg' });
-            
+
             const backendResponse = await axios.post(BACKEND_API_URL, formData, { headers: formData.getHeaders() });
-            bot.sendMessage(chatId, `📷 Анализ изображения: ${backendResponse.data.description}`);
+
+            // Отправляем фото обратно с текстом анализа
+            bot.sendPhoto(chatId, fileId, { caption: `📷 Анализ изображения: ${backendResponse.data.description}` });
         } catch (error) {
             logMessage(`Ошибка обработки фото: ${error.message}`);
             bot.sendMessage(chatId, 'Ошибка обработки фото.');
@@ -60,13 +61,15 @@ bot.on('message', async (msg) => {
             const fileId = msg.voice.file_id;
             const fileInfo = await bot.getFile(fileId);
             const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
-            
+
             const audioResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
             const formData = new FormData();
             formData.append('file', Buffer.from(audioResponse.data), { filename: 'audio.ogg', contentType: 'audio/ogg' });
-            
+
             const backendResponse = await axios.post(BACKEND_API_URL, formData, { headers: formData.getHeaders() });
-            bot.sendMessage(chatId, `🎙️ Анализ аудио: ${backendResponse.data.description}`);
+
+            // Отправляем голосовое сообщение обратно с текстом анализа
+            bot.sendVoice(chatId, fileId, { caption: `🎙️ Анализ аудио: ${backendResponse.data.description}` });
         } catch (error) {
             logMessage(`Ошибка обработки аудио: ${error.message}`);
             bot.sendMessage(chatId, 'Ошибка обработки аудио.');
@@ -80,4 +83,4 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Сервер запущен: http://localhost:${PORT}`);
-});
+});s
